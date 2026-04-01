@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "gsap": "^3.12.5",
+    "howler": "^2.2.4",
+    "pixi.js": "^8.17.1",
     "three": "^0.174.0"
   },
   "devDependencies": {
+    "@types/howler": "^2.2.12",
     "@types/three": "^0.183.1",
     "typescript": "^6.0.2",
     "vite": "^6.2.0"

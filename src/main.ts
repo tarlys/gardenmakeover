@@ -8,6 +8,7 @@ import { AnimalFactory } from './AnimalFactory'
 import { PlantFactory } from './PlantFactory'
 import { HudComponent } from './HudComponent'
 import { BottomHudComponent } from './BottomHudComponent'
+import { SoundManager } from './SoundManager'
 import type { CoinCollectedPayload, ObjectsPlacementConfig, PlacementConfig } from './types'
 
 const canvasElement = document.querySelector<HTMLCanvasElement>('#canvas')
@@ -91,10 +92,11 @@ const rayDown = new THREE.Vector3(0, -1, 0)
 const tmpV = new THREE.Vector3()
 const pointer = new THREE.Vector2()
 const clock = new THREE.Clock()
-const hud = new HudComponent(hudScene, 0)
+let hud: HudComponent
 const bottomHud = new BottomHudComponent(hudScene)
 const animalFactory = new AnimalFactory(scene)
 const plantFactory = new PlantFactory(scene)
+const soundManager = new SoundManager()
 
 let hasVisibleHint = false
 let hasVisibleWinMessage = false
@@ -105,8 +107,6 @@ let cowRootRef: THREE.Object3D | null = null
 
 animalFactory.setCoinCollectedHandler(handleCollectedCoin)
 plantFactory.setCoinCollectedHandler(handleCollectedCoin)
-hud.resize(window.innerWidth, window.innerHeight)
-bottomHud.resize(window.innerWidth, window.innerHeight)
 
 function handleCollectedCoin({ pivot, model, amount, sourceType, sourceName, hudCardName }: CoinCollectedPayload): void {
   const startWorld = pivot.getWorldPosition(new THREE.Vector3())
@@ -395,10 +395,6 @@ async function loadModels(): Promise<void> {
   playIntroToSheep(sheepRoot)
 }
 
-loadModels().catch((err: unknown) => {
-  console.error(err)
-})
-
 function restoreFromHudCard(cardName: string): boolean {
   if (animalFactory.restoreByName(cardName)) {
     bottomHud.setCardUnlocked(cardName, false)
@@ -415,6 +411,7 @@ function restoreFromHudCard(cardName: string): boolean {
 }
 
 function onCanvasClick(event: MouseEvent): void {
+  soundManager.startThemeMusic()
   if (hasVisibleHint) {
     hasVisibleHint = false
     bottomHud.setHint('')
@@ -437,8 +434,6 @@ function onCanvasClick(event: MouseEvent): void {
   animalFactory.handleClick(raycaster)
   plantFactory.handleClick(raycaster)
 }
-
-canvas.addEventListener('click', onCanvasClick)
 
 function onResize(): void {
   const w = canvas.clientWidth || window.innerWidth
@@ -481,4 +476,15 @@ function tick(): void {
   renderer.render(hudScene, hudCamera)
 }
 
-tick()
+async function bootstrap(): Promise<void> {
+  hud = await HudComponent.create(hudScene, 0)
+  hud.resize(window.innerWidth, window.innerHeight)
+  bottomHud.resize(window.innerWidth, window.innerHeight)
+  canvas.addEventListener('click', onCanvasClick)
+  await loadModels()
+  tick()
+}
+
+bootstrap().catch((err: unknown) => {
+  console.error(err)
+})

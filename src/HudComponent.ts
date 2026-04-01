@@ -9,10 +9,17 @@ export class HudComponent {
   private readonly view: HudView
   private readonly controller: HudController
 
-  constructor(scene: THREE.Scene, initialBalance = 0) {
-    this.model = new HudModel(initialBalance)
-    this.view = new HudView(scene)
-    this.controller = new HudController(this.model, this.view)
+  private constructor(model: HudModel, view: HudView, controller: HudController) {
+    this.model = model
+    this.view = view
+    this.controller = controller
+  }
+
+  static async create(_scene: THREE.Scene, initialBalance = 0): Promise<HudComponent> {
+    const model = new HudModel(initialBalance)
+    const view = await HudView.create()
+    const controller = new HudController(model, view)
+    return new HudComponent(model, view, controller)
   }
 
   addPoints(amount: number): void {
@@ -20,7 +27,7 @@ export class HudComponent {
   }
 
   getCollectTargetPosition(): THREE.Vector3 {
-    return this.view.group.position.clone()
+    return this.view.collectTarget.clone()
   }
 
   resize(width: number, height: number): void {

@@ -8,6 +8,7 @@ import { AnimalFactory } from './AnimalFactory'
 import { PlantFactory } from './PlantFactory'
 import { HudComponent } from './HudComponent'
 import { BottomHudComponent } from './BottomHudComponent'
+import { LightingManager } from './LightingManager'
 import { SoundManager } from './SoundManager'
 import type { CoinCollectedPayload, ObjectsPlacementConfig, PlacementConfig } from './types'
 
@@ -27,24 +28,6 @@ canvas.style.height = '100vh'
 
 const scene = new THREE.Scene()
 const hudScene = new THREE.Scene()
-
-function setGradientRedGreenBackground(): void {
-  const el = document.createElement('canvas')
-  el.width = 512
-  el.height = 256
-  const ctx = el.getContext('2d')
-  if (!ctx) throw new Error('2D canvas context is unavailable')
-  const g = ctx.createLinearGradient(0, 0, 0, el.height)
-  g.addColorStop(1, '#ffffff')
-  g.addColorStop(0, '#648339')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, el.width, el.height)
-  const tex = new THREE.CanvasTexture(el)
-  tex.colorSpace = THREE.SRGBColorSpace
-  scene.background = tex
-}
-
-setGradientRedGreenBackground()
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000)
 camera.position.set(8, 6, 14)
@@ -76,7 +59,8 @@ controls.dampingFactor = 0.05
 controls.target.set(0, 0.5, 0)
 controls.maxPolarAngle = Math.PI / 2 - 0.05
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.55))
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.55)
+scene.add(ambientLight)
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 2.1)
 dirLight.position.set(8, 20, 12)
@@ -97,6 +81,13 @@ const bottomHud = new BottomHudComponent(hudScene)
 const animalFactory = new AnimalFactory(scene)
 const plantFactory = new PlantFactory(scene)
 const soundManager = new SoundManager()
+const lightingManager = new LightingManager({
+  scene,
+  renderer,
+  ambientLight,
+  dirLight,
+  fillLight: fill,
+})
 
 let hasVisibleHint = false
 let hasVisibleWinMessage = false
@@ -411,6 +402,9 @@ function restoreFromHudCard(cardName: string): boolean {
 }
 
 function onCanvasClick(event: MouseEvent): void {
+  if (hud.handlePointerDown(event.clientX, event.clientY)) {
+    return
+  }
   soundManager.startThemeMusic()
   if (hasVisibleHint) {
     hasVisibleHint = false
@@ -479,8 +473,14 @@ function tick(): void {
 async function bootstrap(): Promise<void> {
   hud = await HudComponent.create(hudScene, 0)
   hud.resize(window.innerWidth, window.innerHeight)
+  hud.setToggleLabel(lightingManager.getToggleLabel())
+  hud.setToggleLightingHandler(() => {
+    lightingManager.toggle()
+    hud.setToggleLabel(lightingManager.getToggleLabel())
+  })
   bottomHud.resize(window.innerWidth, window.innerHeight)
   canvas.addEventListener('click', onCanvasClick)
+  hud.addDomClickListener(onCanvasClick)
   await loadModels()
   tick()
 }

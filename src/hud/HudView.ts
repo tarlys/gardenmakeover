@@ -4,15 +4,20 @@ import { Application, Container, Graphics, Text } from 'pixi.js'
 export class HudView {
   readonly collectTarget = new THREE.Vector3()
   private readonly app: Application
+  private readonly pixiCanvas: HTMLCanvasElement
   private readonly root = new Container()
+  private readonly toggleGroup = new Container()
   private readonly balanceBox = new Graphics()
   private readonly balanceText = new Text()
   private readonly messageGroup = new Container()
   private readonly messageBox = new Graphics()
   private readonly messageText = new Text()
+  private readonly toggleBox = new Graphics()
+  private readonly toggleText = new Text()
 
-  private constructor(app: Application) {
+  private constructor(app: Application, pixiCanvas: HTMLCanvasElement) {
     this.app = app
+    this.pixiCanvas = pixiCanvas
 
     this.balanceText.anchor.set(0.5)
     this.balanceText.style = {
@@ -31,11 +36,21 @@ export class HudView {
       align: 'center',
     }
 
+    this.toggleText.anchor.set(0.5)
+    this.toggleText.style = {
+      fill: '#fff8d6',
+      fontFamily: 'Arial',
+      fontSize: 14,
+      fontWeight: '600',
+      align: 'center',
+    }
+
     this.root.addChild(this.balanceBox, this.balanceText)
     this.messageGroup.addChild(this.messageBox, this.messageText)
+    this.toggleGroup.addChild(this.toggleBox, this.toggleText)
     this.messageGroup.visible = false
 
-    this.app.stage.addChild(this.root, this.messageGroup)
+    this.app.stage.addChild(this.root, this.messageGroup, this.toggleGroup)
   }
 
   static async create(): Promise<HudView> {
@@ -44,7 +59,7 @@ export class HudView {
     pixiCanvas.style.inset = '0'
     pixiCanvas.style.width = '100vw'
     pixiCanvas.style.height = '100vh'
-    pixiCanvas.style.pointerEvents = 'none'
+    pixiCanvas.style.pointerEvents = 'auto'
     pixiCanvas.style.zIndex = '2'
     document.body.appendChild(pixiCanvas)
 
@@ -56,7 +71,7 @@ export class HudView {
       resizeTo: window,
     })
 
-    return new HudView(app)
+    return new HudView(app, pixiCanvas)
   }
 
   render(balance: number): void {
@@ -69,6 +84,7 @@ export class HudView {
     this.app.renderer.resize(window.innerWidth, window.innerHeight)
     this.root.position.set(window.innerWidth / 2, 56)
     this.messageGroup.position.set(window.innerWidth / 2, window.innerHeight / 2)
+    this.toggleGroup.position.set(window.innerWidth - 92, 34)
     this.collectTarget.set(0, height / 2 - 56, 0)
   }
 
@@ -79,6 +95,27 @@ export class HudView {
     this.drawRoundedPanel(this.messageBox, 440, 110, 0x0c120c, 0.72, 0xffffff, 0.28, 34)
     this.messageText.text = text
     this.messageText.position.set(0, 0)
+  }
+
+  setToggleLabel(text: string): void {
+    this.drawRoundedPanel(this.toggleBox, 144, 40, 0x0c120c, 0.75, 0xffffff, 0.18, 20)
+    this.toggleText.text = text
+    this.toggleText.position.set(0, 0)
+  }
+
+  isToggleHit(clientX: number, clientY: number): boolean {
+    const halfWidth = 72
+    const halfHeight = 20
+    const left = this.toggleGroup.x - halfWidth
+    const right = this.toggleGroup.x + halfWidth
+    const top = this.toggleGroup.y - halfHeight
+    const bottom = this.toggleGroup.y + halfHeight
+
+    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom
+  }
+
+  addDomClickListener(listener: (event: MouseEvent) => void): void {
+    this.pixiCanvas.addEventListener('click', listener)
   }
 
   private drawRoundedPanel(

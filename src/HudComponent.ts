@@ -37,4 +37,20 @@ export class HudComponent {
   showMessage(text: string): void {
     this.controller.showMessage(text)
   }
+
+  setToggleLabel(text: string): void {
+    this.controller.setToggleLabel(text)
+  }
+
+  setToggleLightingHandler(handler: () => void): void {
+    this.controller.setToggleLightingHandler(handler)
+  }
+
+  handlePointerDown(clientX: number, clientY: number): boolean {
+    return this.controller.handlePointerDown(clientX, clientY)
+  }
+
+  addDomClickListener(listener: (event: MouseEvent) => void): void {
+    this.controller.addDomClickListener(listener)
+  }
 }

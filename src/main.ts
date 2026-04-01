@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import gsap from 'gsap'
 
 import objects2Placement from './objects2-placement'
@@ -8,6 +7,7 @@ import { AnimalFactory } from './AnimalFactory'
 import { PlantFactory } from './PlantFactory'
 import { HudComponent } from './HudComponent'
 import { BottomHudComponent } from './BottomHudComponent'
+import { CameraManager } from './CameraManager'
 import { LightingManager } from './LightingManager'
 import { SoundManager } from './SoundManager'
 import type { CoinCollectedPayload, ObjectsPlacementConfig, PlacementConfig } from './types'
@@ -28,19 +28,8 @@ canvas.style.height = '100vh'
 
 const scene = new THREE.Scene()
 const hudScene = new THREE.Scene()
-
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000)
-camera.position.set(8, 6, 14)
-
-const hudCamera = new THREE.OrthographicCamera(
-  -window.innerWidth / 2,
-  window.innerWidth / 2,
-  window.innerHeight / 2,
-  -window.innerHeight / 2,
-  0.1,
-  1000
-)
-hudCamera.position.z = 100
+const cameraManager = new CameraManager(canvas)
+const { camera, hudCamera } = cameraManager
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -52,12 +41,6 @@ renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1
 renderer.autoClear = false
-
-const controls = new OrbitControls(camera, canvas)
-controls.enableDamping = true
-controls.dampingFactor = 0.05
-controls.target.set(0, 0.5, 0)
-controls.maxPolarAngle = Math.PI / 2 - 0.05
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.55)
 scene.add(ambientLight)
@@ -101,10 +84,7 @@ plantFactory.setCoinCollectedHandler(handleCollectedCoin)
 
 function handleCollectedCoin({ pivot, model, amount, sourceType, sourceName, hudCardName }: CoinCollectedPayload): void {
   const startWorld = pivot.getWorldPosition(new THREE.Vector3())
-  const projected = startWorld.clone().project(camera)
-  const canvasWidth = canvas.clientWidth || window.innerWidth
-  const canvasHeight = canvas.clientHeight || window.innerHeight
-  const startHud = new THREE.Vector3(projected.x * canvasWidth * 0.5, projected.y * canvasHeight * 0.5, 0)
+  const startHud = cameraManager.projectWorldToHud(startWorld)
   const targetHud = hud.getCollectTargetPosition()
 
   scene.remove(pivot)
@@ -149,54 +129,11 @@ function handleCollectedCoin({ pivot, model, amount, sourceType, sourceName, hud
 }
 
 function focusCameraOnObject(root: THREE.Object3D, hintText?: string): void {
-  root.updateMatrixWorld(true)
-  const box = new THREE.Box3().setFromObject(root)
-  const center = box.getCenter(new THREE.Vector3())
-  const size = box.getSize(new THREE.Vector3())
-  const focusY = center.y + size.y * 0.2
-  const closeTarget = new THREE.Vector3(center.x, focusY, center.z)
-  const closePosition = new THREE.Vector3(center.x + 10.2, focusY + 8.1, center.z + 12.2)
-
-  controls.enabled = false
-
-  const state = {
-    tx: controls.target.x,
-    ty: controls.target.y,
-    tz: controls.target.z,
-  }
-  const startPosition = camera.position.clone()
-  const arcMid = startPosition.clone().lerp(closePosition, 0.5).add(new THREE.Vector3(0, 4.5, 0))
-  const motion = { t: 0 }
-
-  gsap.to(motion, {
-    t: 1,
-    duration: 2.2,
-    ease: 'power2.inOut',
-    onUpdate: () => {
-      const a = startPosition.clone().lerp(arcMid, motion.t)
-      const b = arcMid.clone().lerp(closePosition, motion.t)
-      camera.position.copy(a.lerp(b, motion.t))
-      camera.lookAt(controls.target)
-    },
-  })
-
-  gsap.to(state, {
-    tx: closeTarget.x,
-    ty: closeTarget.y,
-    tz: closeTarget.z,
-    duration: 2.2,
-    ease: 'power2.inOut',
-    onUpdate: () => {
-      controls.target.set(state.tx, state.ty, state.tz)
-      controls.update()
-    },
-    onComplete: () => {
-      controls.enabled = true
-      if (hintText) {
-        hasVisibleHint = true
-        bottomHud.setHint(hintText)
-      }
-    },
+  cameraManager.focusOnObject(root, () => {
+    if (hintText) {
+      hasVisibleHint = true
+      bottomHud.setHint(hintText)
+    }
   })
 }
 
@@ -376,13 +313,7 @@ async function loadModels(): Promise<void> {
   animalFactory.setCoinTemplate(coinModel, coinPlacement)
   plantFactory.setCoinTemplate(coinModel, coinPlacement)
 
-  groundBox.setFromObject(groundRoot)
-  const center = groundBox.getCenter(new THREE.Vector3())
-  const size = groundBox.getSize(new THREE.Vector3())
-  const dist = Math.max(size.x, size.z) * 0.9 + 6
-  controls.target.copy(center)
-  camera.position.set(center.x + dist * 0.55, center.y + dist * 0.35, center.z + dist * 0.75)
-  controls.update()
+  cameraManager.frameGround(groundRoot)
   playIntroToSheep(sheepRoot)
 }
 
@@ -432,16 +363,9 @@ function onCanvasClick(event: MouseEvent): void {
 function onResize(): void {
   const w = canvas.clientWidth || window.innerWidth
   const h = canvas.clientHeight || window.innerHeight
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-  hudCamera.left = -w / 2
-  hudCamera.right = w / 2
-  hudCamera.top = h / 2
-  hudCamera.bottom = -h / 2
-  hudCamera.updateProjectionMatrix()
+  cameraManager.resize(w, h)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(w, h, false)
-  controls.update()
   hud.resize(w, h)
   bottomHud.resize(w, h)
 }
@@ -463,7 +387,7 @@ function tick(): void {
   animalFactory.update(dt)
   plantFactory.update()
   bottomHud.update(dt)
-  controls.update()
+  cameraManager.update()
   renderer.clear()
   renderer.render(scene, camera)
   renderer.clearDepth()

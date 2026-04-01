@@ -10,7 +10,8 @@ import { BottomHudComponent } from './BottomHudComponent'
 import { CameraManager } from './CameraManager'
 import { LightingManager } from './LightingManager'
 import { SoundManager } from './SoundManager'
-import type { CoinCollectedPayload, ObjectsPlacementConfig, PlacementConfig } from './types'
+import { WorldBuilder } from './WorldBuilder'
+import type { CoinCollectedPayload } from './types'
 
 const canvasElement = document.querySelector<HTMLCanvasElement>('#canvas')
 
@@ -64,6 +65,18 @@ const bottomHud = new BottomHudComponent(hudScene)
 const animalFactory = new AnimalFactory(scene)
 const plantFactory = new PlantFactory(scene)
 const soundManager = new SoundManager()
+const worldBuilder = new WorldBuilder({
+  scene,
+  assetLoader,
+  animalFactory,
+  plantFactory,
+  bottomHud,
+  cameraManager,
+  placementConfig: objects2Placement,
+  raycaster,
+  rayDown,
+  tmpV,
+})
 const lightingManager = new LightingManager({
   scene,
   renderer,
@@ -137,184 +150,9 @@ function focusCameraOnObject(root: THREE.Object3D, hintText?: string): void {
   })
 }
 
-function centerGround(root: THREE.Object3D): void {
-  root.updateMatrixWorld(true)
-  const box = new THREE.Box3().setFromObject(root)
-  const center = box.getCenter(new THREE.Vector3())
-  root.position.x -= center.x
-  root.position.z -= center.z
-  root.position.y -= box.min.y
-}
-
-function extractPlacables(root: THREE.Object3D): THREE.Object3D[] {
-  let nodes = [...root.children]
-  while (nodes.length === 1 && nodes[0] instanceof THREE.Group) {
-    const inner = nodes[0]
-    root.remove(inner)
-    nodes = [...inner.children]
-  }
-  const out: THREE.Object3D[] = []
-  for (const n of nodes) {
-    n.parent?.remove(n)
-    out.push(n)
-  }
-  return out
-}
-
-function heightOnGround(groundRoot: THREE.Object3D, x: number, z: number, rayTop = 800): number {
-  tmpV.set(x, rayTop, z)
-  raycaster.set(tmpV, rayDown)
-  const hits = raycaster.intersectObject(groundRoot, true)
-  return hits.length ? hits[0].point.y : 0
-}
-
-function placeOnTerrain(obj: THREE.Object3D, groundRoot: THREE.Object3D, x: number, z: number): void {
-  obj.position.set(0, 0, 0)
-  obj.updateMatrixWorld(true)
-  let box = new THREE.Box3().setFromObject(obj)
-  const cx = box.getCenter(new THREE.Vector3()).x
-  const cz = box.getCenter(new THREE.Vector3()).z
-  obj.position.x = x - cx
-  obj.position.z = z - cz
-  obj.updateMatrixWorld(true)
-  box = new THREE.Box3().setFromObject(obj)
-  const gx = (box.min.x + box.max.x) / 2
-  const gz = (box.min.z + box.max.z) / 2
-  const ySurf = heightOnGround(groundRoot, gx, gz)
-  obj.position.y += ySurf - box.min.y
-}
-
-function applyPlacement(
-  obj: THREE.Object3D,
-  groundRoot: THREE.Object3D,
-  p: PlacementConfig | null,
-  fallback: { x: number; z: number }
-): void {
-  if (!p) {
-    placeOnTerrain(obj, groundRoot, fallback.x, fallback.z)
-    return
-  }
-
-  const hasX = typeof p.x === 'number'
-  const hasY = typeof p.y === 'number'
-  const hasZ = typeof p.z === 'number'
-
-  if (hasX && hasY && hasZ) {
-    obj.position.set(p.x!, p.y!, p.z!)
-    return
-  }
-
-  const x = hasX ? p.x! : fallback.x
-  const z = hasZ ? p.z! : fallback.z
-  placeOnTerrain(obj, groundRoot, x, z)
-  if (typeof p.yOffset === 'number') {
-    obj.position.y += p.yOffset
-  }
-}
-
-function applyVisibility(obj: THREE.Object3D, placement: PlacementConfig | null): void {
-  if (!placement || placement.visible === undefined) {
-    obj.visible = true
-    return
-  }
-  obj.visible = Boolean(placement.visible)
-}
-
-function resolvePlacement(obj: THREE.Object3D, index: number, cfg: ObjectsPlacementConfig): PlacementConfig | null {
-  const name = obj.name
-  if (name && cfg.byName[name] !== undefined) {
-    return cfg.byName[name]
-  }
-  if (cfg.byIndex[index] !== undefined) {
-    return cfg.byIndex[index]
-  }
-  return null
-}
-
-function buildAutoPositions(n: number, minX: number, maxX: number, minZ: number, maxZ: number): Array<{ x: number; z: number }> {
-  const positions: Array<{ x: number; z: number }> = []
-  if (n === 0) return positions
-  for (let i = 0; i < n; i++) {
-    const t = n > 1 ? i / (n - 1) : 0.5
-    const u = (i * 0.6180339887) % 1
-    const x = minX + (0.25 + 0.5 * t + 0.15 * Math.sin(i * 2.1)) * (maxX - minX)
-    const z = minZ + (0.25 + 0.5 * u + 0.15 * Math.cos(i * 1.7)) * (maxZ - minZ)
-    positions.push({ x, z })
-  }
-  return positions
-}
-
 function playIntroToSheep(sheepRoot: THREE.Object3D | null): void {
   if (!sheepRoot) return
   focusCameraOnObject(sheepRoot, 'Tap on sheep')
-}
-
-async function loadModels(): Promise<void> {
-  const groundGltf = await assetLoader.loadGround2()
-  const groundRoot = groundGltf.scene
-  scene.add(groundRoot)
-  centerGround(groundRoot)
-
-  groundRoot.updateMatrixWorld(true)
-  const groundBox = new THREE.Box3().setFromObject(groundRoot)
-  const pad = 0.4
-  const minX = groundBox.min.x + pad
-  const maxX = groundBox.max.x - pad
-  const minZ = groundBox.min.z + pad
-  const maxZ = groundBox.max.z - pad
-
-  const objectsGltf = await assetLoader.loadObjects2()
-  const placables = extractPlacables(objectsGltf.scene)
-  const sheepRoot = placables.find((obj) => obj.name === 'sheep_1') ?? null
-  cornRootRef = placables.find((obj) => obj.name === 'corn_1') ?? null
-  cowRootRef = placables.find((obj) => obj.name === 'cow_1') ?? null
-
-  const n = placables.length
-  const autoPositions = buildAutoPositions(n, minX, maxX, minZ, maxZ)
-  const centerFallback = {
-    x: (minX + maxX) / 2,
-    z: (minZ + maxZ) / 2,
-  }
-
-  if (n === 0) {
-    console.warn('objects2.glb: нет отдельных узлов для расстановки')
-  }
-
-  placables.forEach((obj, i) => {
-    scene.add(obj)
-    const placement = resolvePlacement(obj, i, objects2Placement)
-    const fallback = autoPositions[i] ?? centerFallback
-    applyPlacement(obj, groundRoot, placement, fallback)
-    applyVisibility(obj, placement)
-    animalFactory.register(obj, objectsGltf.animations)
-    plantFactory.register(obj)
-  })
-
-  const fenceSource = placables.find((obj) => obj.name === 'fence')
-  if (fenceSource) {
-    const extraFence = fenceSource.clone(true)
-    const extraFencePlacement = objects2Placement.extraFence ?? { x: -11.5, z: 8 }
-    scene.add(extraFence)
-    applyPlacement(extraFence, groundRoot, extraFencePlacement, centerFallback)
-    applyVisibility(extraFence, extraFencePlacement)
-    extraFence.rotation.y = typeof extraFencePlacement.rotationY === 'number' ? extraFencePlacement.rotationY : Math.PI
-  }
-
-  plantFactory.finalize()
-  bottomHud.setAssets(
-    Object.fromEntries(placables.map((obj) => [obj.name, obj])) as Record<string, THREE.Object3D>,
-    objectsGltf.animations
-  )
-
-  const coinGltf = await assetLoader.loadCoin()
-  const coinModel = coinGltf.scene
-  const coinPlacement = objects2Placement.coin
-  coinModel.rotation.set(coinPlacement.rotationX ?? 0, coinPlacement.rotationY ?? Math.PI, coinPlacement.rotationZ ?? 0)
-  animalFactory.setCoinTemplate(coinModel, coinPlacement)
-  plantFactory.setCoinTemplate(coinModel, coinPlacement)
-
-  cameraManager.frameGround(groundRoot)
-  playIntroToSheep(sheepRoot)
 }
 
 function restoreFromHudCard(cardName: string): boolean {
@@ -405,7 +243,10 @@ async function bootstrap(): Promise<void> {
   bottomHud.resize(window.innerWidth, window.innerHeight)
   canvas.addEventListener('click', onCanvasClick)
   hud.addDomClickListener(onCanvasClick)
-  await loadModels()
+  const world = await worldBuilder.build()
+  cornRootRef = world.cornRoot
+  cowRootRef = world.cowRoot
+  playIntroToSheep(world.sheepRoot)
   tick()
 }
 

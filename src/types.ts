@@ -32,3 +32,10 @@ export type CoinCollectedPayload = {
 export type CoinCollectedHandler = (payload: CoinCollectedPayload) => void
 
 export type GltfAsset = GLTF
+
+export type WorldBuildResult = {
+  groundRoot: THREE.Object3D
+  sheepRoot: THREE.Object3D | null
+  cornRoot: THREE.Object3D | null
+  cowRoot: THREE.Object3D | null
+}
